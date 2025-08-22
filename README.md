@@ -1,4 +1,4 @@
-# TikTok Snake Game
+# Nokia Snake Game
 
 A modern web-based version of the snake game (inspired by the classic Nokia Snake game). This project features a retro-style snake that chases your mouse cursor with smooth grid-based movements.
 
