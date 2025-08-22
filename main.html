@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nokia Snake — Fixed-Length Trail</title>
+    <link rel="stylesheet" href="global.css" />
+  </head>
+  <body>
+    <svg id="stage"></svg>
+
+    <script>
+      const svg = document.getElementById("stage");
+
+      const U = parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue("--u")
+      );
+      const NUM_SEG = 16; // number of visible blocks
+      const SPACING = 50; // pixels between segment centers (tweak for look)
+      const MIN_SAMPLE = 1.0; // add new trail point if mouse moved at least this much
+      const GRID_SIZE = 25; // grid size for 90-degree movement
+      const MOVE_INTERVAL = 45; // milliseconds between moves
+
+      const BODY = [
+        [0, 1],
+        [1, 1],
+        [2, 1],
+        [1 + 0.5, 0],
+        [2 + 0.5, 0],
+      ];
+
+      const HEAD = [
+        [0, 1],
+        [1, 1],
+        [2, 1],
+        [0.5, 0],
+        [2, 0],
+      ];
+      const EYE = [1, -1];
+
+      const segments = Array.from({ length: NUM_SEG }, () => {
+        const g = create("g");
+        svg.appendChild(g);
+        return { g };
+      });
+
+      function create(tag) {
+        return document.createElementNS("http://www.w3.org/2000/svg", tag);
+      }
+
+      const trail = [];
+      const cumLen = [];
+      let lastX = innerWidth * 0.5,
+        lastY = innerHeight * 0.5;
+
+      const pointer = { x: lastX, y: lastY };
+      const snakeHead = { x: lastX, y: lastY };
+
+      let currentDirection = "right";
+      let lastMoveTime = 0;
+
+      function toGrid(x, y) {
+        return {
+          x: Math.round(x / GRID_SIZE),
+          y: Math.round(y / GRID_SIZE),
+        };
+      }
+
+      function toPixel(gridX, gridY) {
+        return {
+          x: gridX * GRID_SIZE,
+          y: gridY * GRID_SIZE,
+        };
+      }
+
+      function seedTrail() {
+        trail.length = 0;
+        cumLen.length = 0;
+
+        const gridPos = toGrid(lastX, lastY);
+        const alignedPos = toPixel(gridPos.x, gridPos.y);
+        lastX = alignedPos.x;
+        lastY = alignedPos.y;
+        snakeHead.x = lastX;
+        snakeHead.y = lastY;
+        pointer.x = lastX;
+        pointer.y = lastY;
+
+        const totalLen = (NUM_SEG - 1) * SPACING + 120;
+        const n = Math.ceil(totalLen / MIN_SAMPLE) + 2;
+        for (let i = 0; i < n; i++) {
+          const x = lastX - i * MIN_SAMPLE;
+          const y = lastY;
+          trail.push({ x, y });
+          cumLen.push(i === 0 ? 0 : cumLen[i - 1] + MIN_SAMPLE);
+        }
+      }
+      seedTrail();
+
+      function getBestDirection(currentGrid, targetGrid) {
+        const dx = targetGrid.x - currentGrid.x;
+        const dy = targetGrid.y - currentGrid.y;
+
+        if (dx === 0 && dy === 0) return null;
+
+        let testGrid = { ...currentGrid };
+        switch (currentDirection) {
+          case "up":
+            testGrid.y -= 1;
+            break;
+          case "down":
+            testGrid.y += 1;
+            break;
+          case "left":
+            testGrid.x -= 1;
+            break;
+          case "right":
+            testGrid.x += 1;
+            break;
+        }
+
+        const currentDist = Math.abs(dx) + Math.abs(dy);
+        const newDist =
+          Math.abs(targetGrid.x - testGrid.x) +
+          Math.abs(targetGrid.y - testGrid.y);
+
+        if (newDist < currentDist) {
+          return currentDirection;
+        }
+
+        if (Math.abs(dx) > Math.abs(dy)) {
+          if (dx > 0 && currentDirection !== "left") return "right";
+          else if (dx < 0 && currentDirection !== "right") return "left";
+        } else {
+          if (dy > 0 && currentDirection !== "up") return "down";
+          else if (dy < 0 && currentDirection !== "down") return "up";
+        }
+
+        return currentDirection;
+      }
+
+      function isValidDirectionChange(oldDir, newDir) {
+        if (oldDir === newDir) return true;
+        if (
+          (oldDir === "up" || oldDir === "down") &&
+          (newDir === "left" || newDir === "right")
+        )
+          return true;
+        if (
+          (oldDir === "left" || oldDir === "right") &&
+          (newDir === "up" || newDir === "down")
+        )
+          return true;
+        return false;
+      }
+
+      function findAlternativeDirection(currentGrid, targetGrid) {
+        const directions = ["up", "down", "left", "right"];
+        const maxGridX = Math.floor(innerWidth / GRID_SIZE) - 1;
+        const maxGridY = Math.floor(innerHeight / GRID_SIZE) - 1;
+
+        for (const dir of directions) {
+          if (dir === currentDirection) continue;
+
+          let testGrid = { ...currentGrid };
+          switch (dir) {
+            case "up":
+              testGrid.y -= 1;
+              break;
+            case "down":
+              testGrid.y += 1;
+              break;
+            case "left":
+              testGrid.x -= 1;
+              break;
+            case "right":
+              testGrid.x += 1;
+              break;
+          }
+
+          if (
+            testGrid.x >= 0 &&
+            testGrid.x <= maxGridX &&
+            testGrid.y >= 0 &&
+            testGrid.y <= maxGridY
+          ) {
+            return dir;
+          }
+        }
+        return null;
+      }
+
+      function moveSnake() {
+        const currentGrid = toGrid(snakeHead.x, snakeHead.y);
+        const targetGrid = toGrid(pointer.x, pointer.y);
+
+        if (currentGrid.x === targetGrid.x && currentGrid.y === targetGrid.y) {
+          return;
+        }
+
+        const bestDir = getBestDirection(currentGrid, targetGrid);
+
+        if (bestDir && isValidDirectionChange(currentDirection, bestDir)) {
+          currentDirection = bestDir;
+        }
+
+        let newGrid = { ...currentGrid };
+        switch (currentDirection) {
+          case "up":
+            newGrid.y -= 1;
+            break;
+          case "down":
+            newGrid.y += 1;
+            break;
+          case "left":
+            newGrid.x -= 1;
+            break;
+          case "right":
+            newGrid.x += 1;
+            break;
+        }
+
+        const maxGridX = Math.floor(innerWidth / GRID_SIZE) - 1;
+        const maxGridY = Math.floor(innerHeight / GRID_SIZE) - 1;
+
+        if (
+          newGrid.x < 0 ||
+          newGrid.x > maxGridX ||
+          newGrid.y < 0 ||
+          newGrid.y > maxGridY
+        ) {
+          const alternativeDir = findAlternativeDirection(
+            currentGrid,
+            targetGrid
+          );
+          if (alternativeDir && alternativeDir !== currentDirection) {
+            currentDirection = alternativeDir;
+            moveSnake();
+            return;
+          } else {
+            return;
+          }
+        }
+
+        const newPixel = toPixel(newGrid.x, newGrid.y);
+        snakeHead.x = newPixel.x;
+        snakeHead.y = newPixel.y;
+      }
+
+      window.addEventListener("mousemove", (e) => {
+        pointer.x = e.clientX;
+        pointer.y = e.clientY;
+      });
+
+      function addToTrail(x, y) {
+        const dx = x - lastX,
+          dy = y - lastY;
+        const d = Math.hypot(dx, dy);
+        if (d >= MIN_SAMPLE) {
+          trail.push({ x, y });
+          cumLen.push((cumLen.length ? cumLen[cumLen.length - 1] : 0) + d);
+          lastX = x;
+          lastY = y;
+          const need = (NUM_SEG - 1) * SPACING + 200;
+          const maxCum = cumLen[cumLen.length - 1];
+          while (cumLen.length > 2 && maxCum - cumLen[1] > need) {
+            trail.shift();
+            cumLen.shift();
+          }
+        }
+      }
+
+      function getPointAtDistance(dBack) {
+        if (trail.length === 0) return { x: lastX, y: lastY };
+
+        const headCum = cumLen[cumLen.length - 1];
+        const target = headCum - dBack;
+        if (target <= cumLen[0]) return trail[0];
+
+        let lo = 0,
+          hi = cumLen.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (cumLen[mid] < target) lo = mid + 1;
+          else hi = mid;
+        }
+        const i = lo;
+        const a = trail[i - 1],
+          b = trail[i];
+        const la = cumLen[i - 1],
+          lb = cumLen[i];
+        const t = (target - la) / (lb - la || 1);
+        return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+      }
+
+      function rotatePixels(cells, direction) {
+        return cells.map(([x, y]) => {
+          switch (direction) {
+            case "right":
+              return [x, y];
+            case "down":
+              return [-y + 1, x];
+            case "left":
+              return [-x + 2, -y + 1];
+            case "up":
+              return [y, -x + 2];
+            default:
+              return [x, y];
+          }
+        });
+      }
+
+      function clearAndDrawPixels(
+        g,
+        originX,
+        originY,
+        cells,
+        addEye = false,
+        direction = "right"
+      ) {
+        g.innerHTML = "";
+
+        const rotatedCells = rotatePixels(cells, direction);
+
+        for (const [cx, cy] of rotatedCells) {
+          const r = create("rect");
+          r.setAttribute("class", "px");
+          r.setAttribute("x", originX + cx * U);
+          r.setAttribute("y", originY + cy * U);
+          r.setAttribute("width", U);
+          r.setAttribute("height", U);
+          g.appendChild(r);
+        }
+
+        if (addEye) {
+          const rotatedEye = rotatePixels([EYE], direction)[0];
+          const eye = create("rect");
+          eye.setAttribute("class", "px");
+          eye.setAttribute("x", originX + rotatedEye[0] * U);
+          eye.setAttribute("y", originY + rotatedEye[1] * U);
+          eye.setAttribute("width", U);
+          eye.setAttribute("height", U);
+          g.appendChild(eye);
+        }
+      }
+
+      function draw() {
+        const currentTime = Date.now();
+
+        if (currentTime - lastMoveTime >= MOVE_INTERVAL) {
+          moveSnake();
+          lastMoveTime = currentTime;
+        }
+
+        addToTrail(snakeHead.x, snakeHead.y);
+
+        for (let i = 0; i < NUM_SEG; i++) {
+          const pos = getPointAtDistance(i * SPACING);
+          const originX = pos.x - 1.5 * U;
+          const originY = pos.y - 1.0 * U + (i % 2 ? -U / 2 : 0);
+
+          if (i === 0) {
+            clearAndDrawPixels(
+              segments[i].g,
+              originX,
+              originY,
+              HEAD,
+              true,
+              currentDirection
+            );
+          } else if (i < NUM_SEG - 1) {
+            clearAndDrawPixels(segments[i].g, originX, originY, BODY);
+          } else {
+            clearAndDrawPixels(segments[i].g, originX, originY, BODY);
+          }
+        }
+
+        requestAnimationFrame(draw);
+      }
+      draw();
+
+      window.addEventListener("resize", () => {
+        lastX = innerWidth * 0.5;
+        lastY = innerHeight * 0.5;
+        snakeHead.x = lastX;
+        snakeHead.y = lastY;
+        pointer.x = lastX;
+        pointer.y = lastY;
+        currentDirection = "right";
+        lastMoveTime = 0;
+        seedTrail();
+      });
+    </script>
+  </body>
+</html>

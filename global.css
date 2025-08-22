@@ -1,0 +1,27 @@
+:root {
+  --bg: #8bc400;
+  --snake: #000000;
+  --u: 12px;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+svg {
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+
+.px {
+  fill: var(--snake);
+  shape-rendering: crispEdges;
+}
